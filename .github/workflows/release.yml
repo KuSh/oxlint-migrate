@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write # for `npm publish --provenance`
+      id-token: write # for `pnpm publish --provenance`
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: true
@@ -28,13 +28,19 @@ jobs:
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          VERSION=$(echo "${COMMIT_MESSAGE}" | grep -oP 'release: \Kv[0-9]+\.[0-9]+\.[0-9]+')
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - run: npm install -g npm@latest # For trusted publishing support
+          COMMIT_SUBJECT=${COMMIT_MESSAGE%%$'\n'*}
+          VERSION=$(sed -nE 's/^release: (v[0-9]+\.[0-9]+\.[0-9]+).*/\1/p' <<< "${COMMIT_SUBJECT}")
+          if [[ -z "${VERSION}" ]]; then
+            ESCAPED_COMMIT_SUBJECT=${COMMIT_SUBJECT//'%'/'%25'}
+            ESCAPED_COMMIT_SUBJECT=${ESCAPED_COMMIT_SUBJECT//$'\r'/'%0D'}
+            ESCAPED_COMMIT_SUBJECT=${ESCAPED_COMMIT_SUBJECT//$'\n'/'%0A'}
+            echo "::error::Could not extract release version from commit subject: ${ESCAPED_COMMIT_SUBJECT}" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Publish to NPM
-        run: npm publish --tag latest --provenance --access public
+        run: pnpm publish --tag latest --provenance --access public
 
       - name: Create and push tag
         run: |

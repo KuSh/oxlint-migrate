@@ -1,5 +1,11 @@
 import { assert, describe, expect, test } from 'vitest';
-import type { ESLint, OxlintConfig, OxlintConfigOverride } from './types.js';
+import type {
+  ESLint,
+  Options,
+  OxlintConfig,
+  OxlintConfigOverride,
+  RuleSkippedCategory,
+} from './types.js';
 import {
   cleanUpDisabledRootRules,
   cleanUpRulesWhichAreCoveredByCategory,
@@ -9,6 +15,7 @@ import {
   replaceTypescriptAliasRules,
   transformRuleEntry,
 } from './plugins_rules.js';
+import { nurseryRules } from './generated/rules.js';
 import { DefaultReporter } from './reporter.js';
 
 describe('rules and plugins', () => {
@@ -80,9 +87,10 @@ describe('rules and plugins', () => {
     });
 
     test('withNursery', () => {
+      const nurseryRule = nurseryRules[0];
       const eslintConfig: ESLint.Config = {
         rules: {
-          'getter-return': 'error',
+          [nurseryRule]: 'error',
         },
       };
 
@@ -96,7 +104,7 @@ describe('rules and plugins', () => {
         withNursery: true,
       });
       assert(configWithNursery.rules);
-      expect(configWithNursery.rules['getter-return']).toBe('error');
+      expect(configWithNursery.rules[nurseryRule]).toBe('error');
     });
 
     test('typeAware', () => {
@@ -621,6 +629,71 @@ describe('rules and plugins', () => {
       ).toBeUndefined();
     });
 
+    test('base config removes a rule from an override that was already renamed to its canonical form (issue #495)', () => {
+      // After `cleanUpOxlintConfig` runs on an override, plugin-prefixed rules
+      // get renamed to their canonical oxlint form. A subsequent base config
+      // disabling the rule under its original eslint name must still match.
+      const baseConfig: ESLint.Config = {
+        rules: {
+          '@typescript-eslint/array-type': 'off',
+        },
+      };
+
+      // Override is pre-renamed to the canonical form, as it would be after
+      // an earlier `cleanUpOxlintConfig` pass.
+      const overrides: OxlintConfigOverride[] = [
+        {
+          files: ['**/*.ts'],
+          rules: {
+            'typescript/array-type': 'error',
+          },
+        },
+      ];
+      const baseTarget: OxlintConfig = {};
+
+      transformRuleEntry(
+        baseConfig,
+        baseTarget,
+        undefined,
+        undefined,
+        overrides
+      );
+
+      expect(overrides[0].rules?.['typescript/array-type']).toBeUndefined();
+    });
+
+    test('base config removes a typescript-eslint rule from an override that was stripped to its core eslint name (issue #495)', () => {
+      // Rules in `typescriptRulesExtendEslintRules` get their `@typescript-eslint/`
+      // prefix stripped entirely during override cleanup. A subsequent base
+      // config disabling the rule under its `@typescript-eslint/` name must
+      // still match the stripped form.
+      const baseConfig: ESLint.Config = {
+        rules: {
+          '@typescript-eslint/no-shadow': 'off',
+        },
+      };
+
+      const overrides: OxlintConfigOverride[] = [
+        {
+          files: ['**/*.ts'],
+          rules: {
+            'no-shadow': 'error',
+          },
+        },
+      ];
+      const baseTarget: OxlintConfig = {};
+
+      transformRuleEntry(
+        baseConfig,
+        baseTarget,
+        undefined,
+        undefined,
+        overrides
+      );
+
+      expect(overrides[0].rules?.['no-shadow']).toBeUndefined();
+    });
+
     test('unsupported rules disabled in base config should be removed from overrides with jsPlugins', () => {
       const overrideConfig: ESLint.Config = {
         files: ['**/*.js'],
@@ -654,6 +727,49 @@ describe('rules and plugins', () => {
       // rule should also be removed from overrides
       expect(overrides[0].rules?.['some-plugin/some-rule']).toBeUndefined();
     });
+
+    test.each<{
+      category: RuleSkippedCategory;
+      rule: string;
+      options?: Partial<Options>;
+    }>([
+      { category: 'nursery', rule: nurseryRules[0] },
+      {
+        category: 'nursery',
+        rule: '@typescript-eslint/no-unnecessary-condition',
+        options: { typeAware: true },
+      },
+      {
+        category: 'type-aware',
+        rule: '@typescript-eslint/dot-notation',
+      },
+      { category: 'not-implemented', rule: 'unknown-rule' },
+      { category: 'unsupported', rule: 'dot-notation' },
+      { category: 'js-plugins', rule: 'compat/compat' },
+    ])(
+      'does not report $category rules that are disabled',
+      ({ category, rule, options }) => {
+        const eslintConfig: ESLint.Config = {
+          rules: { [rule]: 'off' },
+        };
+
+        const configWithTypeAware: OxlintConfig = {};
+        const reporter = new DefaultReporter();
+
+        transformRuleEntry(eslintConfig, configWithTypeAware, undefined, {
+          ...options,
+          reporter,
+        });
+
+        assert(configWithTypeAware.rules);
+        expect(configWithTypeAware.rules[rule]).toBeUndefined();
+        expect(reporter.getSkippedRulesByCategory()).toStrictEqual(
+          expect.objectContaining({
+            [category]: [],
+          })
+        );
+      }
+    );
   });
 
   test('cleanUpUselessOverridesRules', () => {
@@ -1025,6 +1141,7 @@ describe('rules and plugins', () => {
       },
       rules: {
         'no-await-in-loop': 'error',
+        // @ts-expect-error - the rule does not accept this configuration, but we want to test that it is preserved since it's custom
         'no-useless-call': ['error', 'some-config'],
         'unicorn/prefer-set-has': ['error'],
       },
@@ -1151,6 +1268,7 @@ describe('rules and plugins', () => {
           'react-hooks/exhaustive-deps': 'warn',
           'react-refresh/only-export-components': 'error',
           'import-x/no-duplicates': 'error',
+          'jsx-a11y-x/no-autofocus': 'warn',
           '@next/next/no-img-element': 'error',
         },
       };
@@ -1164,6 +1282,7 @@ describe('rules and plugins', () => {
           'react/exhaustive-deps': 'warn',
           'react/only-export-components': 'error',
           'import/no-duplicates': 'error',
+          'jsx-a11y/no-autofocus': 'warn',
           'nextjs/no-img-element': 'error',
         },
       });

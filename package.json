@@ -1,6 +1,6 @@
 {
   "name": "@oxlint/migrate",
-  "version": "1.59.0",
+  "version": "1.80.0",
   "description": "Generates a `.oxlintrc.json` from a existing eslint flat config",
   "keywords": [
     "eslint",
@@ -29,9 +29,8 @@
   "scripts": {
     "prepare": "husky",
     "generate": "node --import @oxc-node/core/register ./scripts/generate.ts",
-    "generate:vitest": "node --import @oxc-node/core/register ./scripts/generate-vitest-rules.ts",
     "generate:unsupported": "node --import @oxc-node/core/register ./scripts/fetch-unsupported-rules.ts",
-    "generate:all": "pnpm generate:vitest && pnpm generate && pnpm generate:unsupported && pnpm format",
+    "generate:all": "pnpm generate && pnpm generate:unsupported && pnpm format",
     "format": "oxfmt",
     "lint": "oxlint",
     "test": "vitest",
@@ -39,16 +38,16 @@
     "manual-test": "pnpm build; chmod +x dist/bin/oxlint-migrate.mjs; npx ."
   },
   "dependencies": {
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "globals": "^17.0.0",
-    "oxc-parser": "^0.123.0",
+    "oxc-parser": "^0.146.0",
     "tinyglobby": "^0.2.14"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^8.0.0",
-    "@babel/eslint-plugin": "^7.27.1",
-    "@e18e/eslint-plugin": "^0.3.0",
-    "@eslint-react/eslint-plugin": "^4.0.0",
+    "@antfu/eslint-config": "^9.0.0",
+    "@babel/eslint-plugin": "^8.0.0",
+    "@e18e/eslint-plugin": "^0.8.0",
+    "@eslint-react/eslint-plugin": "^5.0.0",
     "@eslint/js": "^10.0.0",
     "@logux/eslint-config": "^57.0.0",
     "@oxc-node/core": "^0.1.0",
@@ -67,7 +66,7 @@
     "eslint-plugin-header": "^3.1.1",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-import-x": "^4.16.0",
-    "eslint-plugin-jsdoc": "^62.0.0",
+    "eslint-plugin-jsdoc": "^63.0.0",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-local": "^6.0.0",
     "eslint-plugin-mocha": "^11.2.0",
@@ -77,17 +76,17 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-perf": "^3.3.3",
     "eslint-plugin-react-refresh": "^0.5.0",
-    "eslint-plugin-react-web-api": "^4.0.0",
+    "eslint-plugin-react-web-api": "^5.0.0",
     "eslint-plugin-regexp": "^3.0.0",
     "eslint-plugin-tsdoc": "^0.5.0",
-    "eslint-plugin-unicorn": "^64.0.0",
+    "eslint-plugin-unicorn": "^67.0.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.1.2",
+    "lint-staged": "^17.0.0",
     "next": "^16.0.0",
-    "oxfmt": "^0.43.0",
-    "oxlint": "^1.59.0",
-    "oxlint-tsgolint": "^0.19.0",
-    "tsdown": "^0.21.0",
+    "oxfmt": "^0.64.0",
+    "oxlint": "^1.80.0",
+    "oxlint-tsgolint": "^0.25.0",
+    "tsdown": "^0.22.0",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.35.0",
     "vitest": "^4.0.0"
@@ -98,5 +97,5 @@
   "engines": {
     "node": ">=24.14.0 <25.0.0 || >=25.4.0"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@11.22.0"
 }

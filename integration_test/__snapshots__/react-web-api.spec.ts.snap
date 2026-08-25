@@ -21,6 +21,7 @@ exports[`react-web-api > react-web-api 1`] = `
         "rules": {
           "constructor-super": "error",
           "for-direction": "error",
+          "getter-return": "error",
           "no-array-constructor": "error",
           "no-async-promise-executor": "error",
           "no-case-declarations": "error",
@@ -64,6 +65,7 @@ exports[`react-web-api > react-web-api 1`] = `
           "no-this-before-super": "error",
           "no-unassigned-vars": "error",
           "no-unexpected-multiline": "error",
+          "no-unreachable": "error",
           "no-unsafe-finally": "error",
           "no-unsafe-negation": "error",
           "no-unsafe-optional-chaining": "error",
@@ -104,15 +106,15 @@ exports[`react-web-api > react-web-api 1`] = `
   "skipped": {
     "js-plugins": [
       "react-web-api/no-leaked-event-listener",
+      "react-web-api/no-leaked-fetch",
+      "react-web-api/no-leaked-intersection-observer",
       "react-web-api/no-leaked-interval",
       "react-web-api/no-leaked-resize-observer",
       "react-web-api/no-leaked-timeout",
     ],
     "not-implemented": [],
     "nursery": [
-      "getter-return",
       "no-undef",
-      "no-unreachable",
       "no-useless-assignment",
     ],
     "type-aware": [],
@@ -156,6 +158,7 @@ exports[`react-web-api --js-plugins > react-web-api--js-plugins 1`] = `
         "rules": {
           "constructor-super": "error",
           "for-direction": "error",
+          "getter-return": "error",
           "no-array-constructor": "error",
           "no-async-promise-executor": "error",
           "no-case-declarations": "error",
@@ -199,6 +202,7 @@ exports[`react-web-api --js-plugins > react-web-api--js-plugins 1`] = `
           "no-this-before-super": "error",
           "no-unassigned-vars": "error",
           "no-unexpected-multiline": "error",
+          "no-unreachable": "error",
           "no-unsafe-finally": "error",
           "no-unsafe-negation": "error",
           "no-unsafe-optional-chaining": "error",
@@ -212,6 +216,8 @@ exports[`react-web-api --js-plugins > react-web-api--js-plugins 1`] = `
           "no-with": "error",
           "preserve-caught-error": "error",
           "react-web-api/no-leaked-event-listener": "error",
+          "react-web-api/no-leaked-fetch": "warn",
+          "react-web-api/no-leaked-intersection-observer": "warn",
           "react-web-api/no-leaked-interval": "warn",
           "react-web-api/no-leaked-resize-observer": "warn",
           "react-web-api/no-leaked-timeout": "warn",
@@ -244,9 +250,7 @@ exports[`react-web-api --js-plugins > react-web-api--js-plugins 1`] = `
     "js-plugins": [],
     "not-implemented": [],
     "nursery": [
-      "getter-return",
       "no-undef",
-      "no-unreachable",
       "no-useless-assignment",
     ],
     "type-aware": [],
@@ -287,6 +291,7 @@ exports[`react-web-api --type-aware > react-web-api--type-aware 1`] = `
         "rules": {
           "constructor-super": "error",
           "for-direction": "error",
+          "getter-return": "error",
           "no-array-constructor": "error",
           "no-async-promise-executor": "error",
           "no-case-declarations": "error",
@@ -330,6 +335,7 @@ exports[`react-web-api --type-aware > react-web-api--type-aware 1`] = `
           "no-this-before-super": "error",
           "no-unassigned-vars": "error",
           "no-unexpected-multiline": "error",
+          "no-unreachable": "error",
           "no-unsafe-finally": "error",
           "no-unsafe-negation": "error",
           "no-unsafe-optional-chaining": "error",
@@ -370,15 +376,15 @@ exports[`react-web-api --type-aware > react-web-api--type-aware 1`] = `
   "skipped": {
     "js-plugins": [
       "react-web-api/no-leaked-event-listener",
+      "react-web-api/no-leaked-fetch",
+      "react-web-api/no-leaked-intersection-observer",
       "react-web-api/no-leaked-interval",
       "react-web-api/no-leaked-resize-observer",
       "react-web-api/no-leaked-timeout",
     ],
     "not-implemented": [],
     "nursery": [
-      "getter-return",
       "no-undef",
-      "no-unreachable",
       "no-useless-assignment",
     ],
     "type-aware": [],
@@ -420,6 +426,7 @@ exports[`react-web-api merge > react-web-api--merge 1`] = `
         "rules": {
           "constructor-super": "error",
           "for-direction": "error",
+          "getter-return": "error",
           "no-array-constructor": "error",
           "no-async-promise-executor": "error",
           "no-case-declarations": "error",
@@ -463,6 +470,7 @@ exports[`react-web-api merge > react-web-api--merge 1`] = `
           "no-this-before-super": "error",
           "no-unassigned-vars": "error",
           "no-unexpected-multiline": "error",
+          "no-unreachable": "error",
           "no-unsafe-finally": "error",
           "no-unsafe-negation": "error",
           "no-unsafe-optional-chaining": "error",
@@ -502,15 +510,15 @@ exports[`react-web-api merge > react-web-api--merge 1`] = `
   "skipped": {
     "js-plugins": [
       "react-web-api/no-leaked-event-listener",
+      "react-web-api/no-leaked-fetch",
+      "react-web-api/no-leaked-intersection-observer",
       "react-web-api/no-leaked-interval",
       "react-web-api/no-leaked-resize-observer",
       "react-web-api/no-leaked-timeout",
     ],
     "not-implemented": [],
     "nursery": [
-      "getter-return",
       "no-undef",
-      "no-unreachable",
       "no-useless-assignment",
     ],
     "type-aware": [],

@@ -48,6 +48,7 @@ const OTHER_SUPPORTED_ENVS = [
 
 // these parsers are supported by oxlint and should not be reported
 const SUPPORTED_ESLINT_PARSERS = ['typescript-eslint/parser'];
+const ROOT_GLOBALS_WARNING_THRESHOLD = 10;
 
 const normalizeGlobValue = (
   value: ESLint.GlobalAccess
@@ -99,8 +100,10 @@ export const transformBoolGlobalToString = (config: OxlintConfigOrOverride) => {
   }
 
   for (const [entry, value] of Object.entries(config.globals)) {
-    config.globals[entry] =
-      transformEslintGlobalAccessToOxlintGlobalValue(value);
+    if (typeof value === 'string') {
+      continue;
+    }
+    config.globals[entry] = value ? 'writable' : 'readonly';
   }
 };
 
@@ -246,6 +249,37 @@ export const transformEnvAndGlobals = (
       }
     }
   }
+};
+
+export const warnAboutLargeRootGlobals = (
+  configs: ESLint.Config[],
+  oxlintConfig: OxlintConfig,
+  options?: Options
+): void => {
+  const sourceRootGlobals = new Set<string>();
+
+  for (const config of configs) {
+    if (config.files === undefined && config.languageOptions?.globals) {
+      for (const global of Object.keys(config.languageOptions.globals)) {
+        sourceRootGlobals.add(global);
+      }
+    }
+  }
+
+  const finalRootGlobals = Object.keys(oxlintConfig.globals ?? {});
+
+  if (
+    sourceRootGlobals.size <= ROOT_GLOBALS_WARNING_THRESHOLD ||
+    finalRootGlobals.length <= ROOT_GLOBALS_WARNING_THRESHOLD
+  ) {
+    return;
+  }
+
+  options?.reporter?.addWarning(
+    `Added ${finalRootGlobals.length} globals to the root config. ` +
+      `This may happen when your ESLint config uses a different version of the \`globals\` package than @oxlint/migrate. ` +
+      `Try updating \`globals\` and rerun the migration to get a simpler config.`
+  );
 };
 
 export const cleanUpUselessOverridesEnv = (config: OxlintConfig): void => {

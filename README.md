@@ -73,7 +73,7 @@ Not all `settings` options are supported by oxlint, and so rule behavior in cert
 
 **Local ESLint Plugins imported via path are not migrated**
 
-JS plugin migration cannot migrate ESLint plugins from file paths in the same repo currently (e.g. if you have `../eslint-plugin-myplugin` in your `eslint.config.mjs`). You will need to copy them over into the `jsPlugins` manually. See [the JS Plugins docs]() for more info.
+JS plugin migration cannot migrate ESLint plugins from file paths in the same repo currently (e.g. if you have `../eslint-plugin-myplugin` in your `eslint.config.mjs`). You will need to copy them over into the `jsPlugins` manually. See [the JS Plugins docs](<>) for more info.
 
 **`globals` field with large number of values**
 
@@ -115,3 +115,11 @@ Depending on how this is implemented by the given config, these behaviors may no
 The JS Plugins API supports almost all ESLint v9+ plugins for linting JS/TS/JSX/TSX files, but there are still some minor holes in support. See the [JS Plugins documentation](https://oxc.rs/docs/guide/usage/linter/js-plugins.html) for specifics.
 
 For example, if you currently use `eslint-plugin-svelte`, only some of its rules will work via JS Plugin, as Oxlint does not yet fully support custom file formats like `.svelte`. This means that Oxlint will only be able to lint the script blocks in your `.svelte` files, and not the template blocks where many of the `eslint-plugin-svelte` rules apply.
+
+# [Sponsored By](https://oxc.rs/sponsor)
+
+<p align="center">
+  <a href="https://oxc.rs/sponsor">
+    <img src="https://raw.githubusercontent.com/oxc-project/sponsors/main/sponsors.svg" alt="Our sponsors" />
+  </a>
+</p>

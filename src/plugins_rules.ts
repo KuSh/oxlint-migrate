@@ -17,10 +17,10 @@ import {
 import {
   enableJsPluginRule,
   isIgnoredPluginRule,
+  mergeJsPlugins,
   resolveJsPluginRuleName,
 } from './jsPlugins.js';
 import { buildUnsupportedRuleExplanations, isEqualDeep } from './utilities.js';
-import { UrlAndSpecifiers } from '../bin/config-loader.js';
 
 const allRules = Object.values(rules).flat();
 const unsupportedRuleExplanations = buildUnsupportedRuleExplanations();
@@ -208,8 +208,7 @@ export const transformRuleEntry = (
   baseConfig?: OxlintConfig,
   options?: Options,
   overrides?: OxlintConfigOverride[],
-  globalPlugins?: Record<string, ESLint.Plugin> | null,
-  loadedModules?: Map<unknown, UrlAndSpecifiers[]>
+  globalPlugins?: Record<string, ESLint.Plugin> | null
 ): void => {
   if (eslintConfig.rules === undefined) {
     return;
@@ -226,6 +225,8 @@ export const transformRuleEntry = (
     globalPlugins
       ? { ...globalPlugins, ...eslintConfig.plugins }
       : eslintConfig.plugins;
+
+  const specifiers = options?.jsPluginSpecifiers;
 
   for (const [originalRule, config] of Object.entries(eslintConfig.rules)) {
     // When --type-aware is enabled, remap ESLint rules to their @typescript-eslint
@@ -252,7 +253,11 @@ export const transformRuleEntry = (
       // Also try the resolved name in case the rule was stored under a
       // renamed prefix by a previous enableJsPluginRule call.
       if (options?.jsPlugins) {
-        const resolved = resolveJsPluginRuleName(rule, effectivePlugins);
+        const resolved = resolveJsPluginRuleName(
+          rule,
+          effectivePlugins,
+          specifiers
+        );
         if (resolved !== rule) {
           removePreviousOverrideRule(resolved, eslintConfig, overrides);
         }
@@ -304,7 +309,11 @@ export const transformRuleEntry = (
         if (isOffValue(normalizedConfig)) {
           // Use the resolved (potentially renamed) rule name for consistency
           // with enabled rules that go through enableJsPluginRule.
-          const resolvedRule = resolveJsPluginRuleName(rule, effectivePlugins);
+          const resolvedRule = resolveJsPluginRuleName(
+            rule,
+            effectivePlugins,
+            specifiers
+          );
           if (eslintConfig.files === undefined) {
             // base config: drop disabled rule entirely
             delete targetConfig.rules[resolvedRule];
@@ -317,7 +326,7 @@ export const transformRuleEntry = (
                 resolvedRule,
                 normalizedConfig,
                 effectivePlugins,
-                loadedModules
+                specifiers
               );
             }
           }
@@ -336,7 +345,7 @@ export const transformRuleEntry = (
             rule,
             normalizedConfig,
             effectivePlugins,
-            loadedModules
+            specifiers
           )
         ) {
           const category = unsupportedRuleExplanations[rule]
@@ -473,9 +482,7 @@ const mergeOverrideProperties = (
     ];
   }
   if (source.jsPlugins) {
-    target.jsPlugins = [
-      ...new Set([...(target.jsPlugins ?? []), ...source.jsPlugins]),
-    ];
+    target.jsPlugins = mergeJsPlugins(target.jsPlugins, source.jsPlugins);
   }
 
   // Object properties: last-wins per key

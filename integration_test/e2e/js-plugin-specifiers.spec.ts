@@ -114,8 +114,10 @@ describe('migrating plugins with known specifiers', () => {
     };
 
     const result = runOxlintWithConfig(withoutInline, checkDir);
-    expect(result.output).toBe('');
-    expect(result.ok).toBe(true);
+    expect(
+      result.ok,
+      `oxlint rejected the migrated config:\n${result.output}`
+    ).toBe(true);
   });
 });
 

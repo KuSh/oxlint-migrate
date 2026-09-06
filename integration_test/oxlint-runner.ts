@@ -39,8 +39,10 @@ export const runOxlintWithConfig = (
   config: OxlintConfig,
   configDir: string
 ): OxlintRun => {
-  // An empty file cannot trigger a diagnostic, so `--silent` leaves output and a
-  // non-zero exit code as symptoms of the config alone.
+  // An empty file cannot produce a diagnostic, so a non-zero exit code can only come
+  // from the config itself. The output is returned for the failure message but must
+  // not be asserted on: oxlint prints a run summary whose wording and presence vary
+  // between versions, even under `--silent`.
   const { status, output } = runOxlint(config, configDir, '', ['--silent']);
   return { ok: status === 0, output };
 };

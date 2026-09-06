@@ -183,15 +183,31 @@ export type Reporter = {
 };
 
 /**
- * Maps every ESLint plugin object reachable from a flat config to the import
- * specifier oxlint should load it from.
+ * What tracing the ESLint config's imports established about its plugins.
  *
  * The key is the plugin object itself, because that is the only thing an ESLint
- * config exposes: `plugins: { regexp }` says nothing about where `regexp` came
- * from. The CLI builds this map by recording module resolutions while it imports
- * the ESLint config, see `bin/config-loader.ts`.
+ * config exposes: `plugins: { regexp }` says nothing about where `regexp` came from.
+ * The CLI builds this by recording module resolutions while it imports the config,
+ * see `bin/config-loader.ts`.
+ *
+ * A plugin falls into exactly one of three states, and each is migrated differently:
+ *
+ * - in {@link byPlugin} — importing that specifier yields this plugin, so the
+ *   `jsPlugins` entry can name it exactly;
+ * - in {@link nested} — the plugin exists in a module, but only inside another
+ *   config, so no specifier addresses it and the package-name heuristic has to do;
+ * - in neither — the ESLint config built the plugin itself and nothing can point
+ *   at it.
+ *
+ * The whole value being `undefined` is a fourth case: tracing did not run, so nothing
+ * is known and every plugin takes the heuristic.
  */
-export type JsPluginSpecifiers = ReadonlyMap<unknown, string>;
+export type JsPluginSpecifiers = {
+  /** Specifier to load each plugin that a `jsPlugins` entry can address. */
+  readonly byPlugin: ReadonlyMap<unknown, string>;
+  /** Plugins found only inside a module's own configs, which no specifier yields. */
+  readonly nested: ReadonlySet<unknown>;
+};
 
 export type Options = {
   reporter?: Reporter;
@@ -200,9 +216,8 @@ export type Options = {
   typeAware?: boolean;
   jsPlugins?: boolean;
   /**
-   * Import specifiers for the plugins used by the ESLint config. When a plugin is
-   * found here, its `jsPlugins` entry can name both the alias and the specifier
-   * instead of guessing the npm package name from the rule prefix.
+   * What tracing the ESLint config's imports established about its plugins. Leave it
+   * unset to migrate every plugin with the package-name heuristic.
    */
   jsPluginSpecifiers?: JsPluginSpecifiers;
 };

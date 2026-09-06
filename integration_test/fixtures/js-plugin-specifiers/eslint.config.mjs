@@ -11,11 +11,15 @@ const inline = {
 
 export default [
   {
-    plugins: { mylocal: named, anon: anonymous, inline },
+    // `inline` is registered twice, the second time under `local` — an alias whose
+    // package name can never be guessed, so it is migrated only because tracing can
+    // say the plugin belongs to no module.
+    plugins: { mylocal: named, anon: anonymous, inline, local: inline },
     rules: {
       'mylocal/no-named': 'error',
       'anon/no-anonymous': 'warn',
       'inline/no-inline': 'error',
+      'local/no-inline': 'error',
     },
   },
   {

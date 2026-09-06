@@ -29,8 +29,13 @@ const MODULE_EXTENSIONS = new Set([
 export type LoadedESLintConfig = {
   /** The module namespace of the imported ESLint config. */
   config: any;
-  /** Import specifiers for the ESLint plugins the config pulled in. */
-  pluginSpecifiers: JsPluginSpecifiers;
+  /**
+   * Where the config's plugins came from, or `undefined` when tracing was turned off
+   * or is unavailable. The difference matters: without tracing nothing can be said
+   * about a plugin, whereas a completed trace that does not know a plugin means the
+   * config built it itself.
+   */
+  pluginSpecifiers: JsPluginSpecifiers | undefined;
 };
 
 export type LoadESLintConfigOptions = {
@@ -111,6 +116,10 @@ const packageNameFromPath = (filePath: string): string | undefined => {
   return second === undefined ? undefined : `${first}/${second}`;
 };
 
+/** True for a file that belongs to an installed package rather than to the project. */
+const isInsideNodeModules = (filePath: string): boolean =>
+  filePath.split(path.sep).includes('node_modules');
+
 /** `eslint-plugin-x`, `@scope/eslint-plugin` or `@scope/eslint-plugin-x`. */
 const isEslintPluginPackageName = (packageName: string): boolean =>
   /^(@[^/]+\/)?eslint-plugin(-|$)/.test(packageName);
@@ -163,18 +172,99 @@ const isPluginLike = (value: unknown): boolean =>
  * The values of a module an ESLint config could pass as a plugin *and* that oxlint
  * would get back when it loads the same specifier.
  *
- * Deliberately shallow. Plugins also hide inside a package's own configs (
- * `reactRefresh.configs.recommended.plugins['react-refresh']`,
- * `eslintReact.configs.all.plugins['@eslint-react/dom']`), but those are separate
- * objects that importing the package does not yield, so pointing a `jsPlugins`
- * entry at the package would register the wrong plugin. Named exports are skipped
- * for the same reason: oxlint loads a plugin's default export.
+ * Deliberately shallow. Named exports are skipped because oxlint loads a plugin's
+ * default export, so a `jsPlugins` entry naming the package would not yield them.
  */
-const pluginCandidates = (namespace: Record<string, unknown>): unknown[] => [
+const addressableCandidates = (
+  namespace: Record<string, unknown>
+): unknown[] => [
   // `import * as plugin from '...'` hands the namespace itself to `plugins`.
   namespace,
   namespace.default,
 ];
+
+/** Bounds on {@link collectNestedPlugins}, shared across a whole config load. */
+const NESTED_SCAN_MAX_DEPTH = 5;
+const NESTED_SCAN_MAX_NODES = 200_000;
+
+/**
+ * Finds plugin objects a module registers inside its own configs, e.g.
+ * `reactRefresh.configs.recommended.plugins['react-refresh']` or the plugins
+ * `eslint-config-next` sets up for you.
+ *
+ * These are *not* addressable: they are distinct objects that importing the package
+ * does not return, so a `jsPlugins` entry pointing at the package would register the
+ * wrong plugin. They are recorded only so the migration can tell them apart from a
+ * plugin built inside the ESLint config itself, which is the one case where nothing
+ * can be resolved and the user has to step in.
+ *
+ * Only packages are scanned. The ESLint config's own files are modules too, and
+ * every plugin they register would look "nested" from here, which would erase the
+ * very distinction this exists to draw. A plugin registered by one of the user's own
+ * config files is addressable only if that file exports it, which the pass above
+ * already covers.
+ *
+ * The walk is bounded in depth and in total nodes because it runs over every module
+ * in the config's dependency graph, and reads properties defensively: a package's
+ * `configs` are often lazy getters that build their value on access.
+ */
+const collectNestedPlugins = (
+  root: unknown,
+  into: Set<unknown>,
+  budget: { nodes: number }
+): void => {
+  const seen = new WeakSet<object>();
+
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > NESTED_SCAN_MAX_DEPTH || budget.nodes <= 0) {
+      return;
+    }
+    if (typeof value !== 'object' || value === null || seen.has(value)) {
+      return;
+    }
+    seen.add(value);
+    budget.nodes--;
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        walk(item, depth + 1);
+      }
+      return;
+    }
+
+    for (const key of Object.keys(value)) {
+      // A rules record is large and can never hold a plugin.
+      if (key === 'rules') {
+        continue;
+      }
+
+      let child: unknown;
+      try {
+        child = (value as Record<string, unknown>)[key];
+      } catch {
+        continue; // a getter that throws, e.g. an uninitialised circular import
+      }
+
+      if (
+        key === 'plugins' &&
+        typeof child === 'object' &&
+        child !== null &&
+        !Array.isArray(child)
+      ) {
+        for (const plugin of Object.values(child)) {
+          if (isPluginLike(plugin)) {
+            into.add(plugin);
+          }
+        }
+        continue;
+      }
+
+      walk(child, depth + 1);
+    }
+  };
+
+  walk(root, 0);
+};
 
 /**
  * Records where each module of the ESLint config's dependency graph was imported
@@ -245,31 +335,45 @@ const collectPluginSpecifiers = async (
     )
   );
 
-  const specifiers = new Map<unknown, string>();
+  const byPlugin = new Map<unknown, string>();
+  const nested = new Set<unknown>();
+  const budget = { nodes: NESTED_SCAN_MAX_NODES };
+
   for (const entry of namespaces) {
     if (entry === undefined) {
       continue;
     }
     const [url, namespace] = entry;
+    const filePath = fileURLToPath(url);
+
+    if (isInsideNodeModules(filePath)) {
+      collectNestedPlugins(namespace, nested, budget);
+    }
+
     const specifier = pickSpecifier(
       specifiersByUrl.get(url) ?? [],
-      fileURLToPath(url),
+      filePath,
       baseDir
     );
     if (specifier === undefined) {
       continue;
     }
 
-    for (const candidate of pluginCandidates(namespace)) {
+    for (const candidate of addressableCandidates(namespace)) {
       // The first specifier wins: a plugin re-exported by several modules keeps the
       // one closest to how it is normally imported.
-      if (isPluginLike(candidate) && !specifiers.has(candidate)) {
-        specifiers.set(candidate, specifier);
+      if (isPluginLike(candidate) && !byPlugin.has(candidate)) {
+        byPlugin.set(candidate, specifier);
       }
     }
   }
 
-  return specifiers;
+  // A plugin we can address is never also "merely nested".
+  for (const plugin of byPlugin.keys()) {
+    nested.delete(plugin);
+  }
+
+  return { byPlugin, nested };
 };
 
 export const loadESLintConfig = async (
@@ -318,7 +422,7 @@ export const loadESLintConfig = async (
         specifiersByUrl,
         options?.specifierBaseDir ?? path.dirname(filePath)
       )
-    : new Map<unknown, string>();
+    : undefined;
 
   return { config, pluginSpecifiers };
 };

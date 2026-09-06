@@ -7,11 +7,33 @@ import type {
   OxlintConfigRuleSeverity,
 } from './types.js';
 
-const ignorePlugins = new Set<string>([
+/** Aliases whose rules oxlint implements natively, so they never become JS plugins. */
+const nativePluginAliases = new Set<string>([
   ...Object.keys(rulesPrefixesForPlugins),
   ...Object.values(rulesPrefixesForPlugins),
-  'local', // ToDo: handle local plugin rules
 ]);
+
+/**
+ * Aliases whose npm package name cannot be guessed. `local` is the conventional name
+ * for a plugin a project defines itself, so `eslint-plugin-local` is close to always
+ * the wrong package — and it exists on npm, so the guess produces a config that
+ * loads the wrong plugin instead of failing loudly.
+ *
+ * Their rules are migrated only when tracing knows where the plugin came from.
+ */
+const unguessableAliases = new Set<string>(['local']);
+
+const ignorePlugins = new Set<string>([
+  ...nativePluginAliases,
+  ...unguessableAliases,
+]);
+
+/**
+ * Specifier written for a plugin the ESLint config built itself, which no import can
+ * reach. The rules are still migrated, so the user only has to fill in this one
+ * field; the CLI points them at it after writing the config.
+ */
+export const UNRESOLVED_PLUGIN_SPECIFIER = '<NOT FOUND>';
 
 const tryResolvePackage = (packageName: string): boolean => {
   try {
@@ -210,7 +232,9 @@ const resolveJsPluginNamespace = (
   plugin: ESLint.Plugin | undefined,
   specifiers?: JsPluginSpecifiers
 ): string => {
-  if (plugin !== undefined && specifiers?.get(plugin) !== undefined) {
+  // Both an addressed plugin and an unresolved one carry an explicit `name`, so the
+  // alias survives; only the heuristic below has to follow oxlint's own derivation.
+  if (resolvePluginTrace(plugin, specifiers).kind !== 'heuristic') {
     return asJsPluginNamespace(pluginName);
   }
 
@@ -224,6 +248,39 @@ const resolveJsPluginNamespace = (
   }
 
   return pluginName;
+};
+
+/**
+ * How a plugin should be written into `jsPlugins`, from what tracing found.
+ *
+ * `heuristic` covers everything tracing cannot improve on: no tracing at all, a rule
+ * whose plugin the config never registers, and a plugin that exists in a module but
+ * only inside another config so that no specifier yields it. `unresolved` is
+ * narrower — tracing ran, the config registered the plugin, and it belongs to no
+ * module at all, which leaves the ESLint config itself as the only place it can have
+ * been built.
+ */
+type PluginTrace =
+  | { kind: 'heuristic' }
+  | { kind: 'unresolved' }
+  | { kind: 'addressable'; specifier: string };
+
+const HEURISTIC: PluginTrace = { kind: 'heuristic' };
+
+const resolvePluginTrace = (
+  plugin: ESLint.Plugin | undefined,
+  specifiers?: JsPluginSpecifiers
+): PluginTrace => {
+  if (plugin === undefined || specifiers === undefined) {
+    return HEURISTIC;
+  }
+
+  const specifier = specifiers.byPlugin.get(plugin);
+  if (specifier !== undefined) {
+    return { kind: 'addressable', specifier };
+  }
+
+  return specifiers.nested.has(plugin) ? HEURISTIC : { kind: 'unresolved' };
 };
 
 /** Identity of a `jsPlugins` entry, used to de-duplicate the list. */
@@ -302,17 +359,23 @@ export const enableJsPluginRule = (
     return false;
   }
 
-  if (ignorePlugins.has(pluginName)) {
+  if (nativePluginAliases.has(pluginName)) {
+    return false;
+  }
+
+  const plugin = plugins?.[pluginName];
+  const trace = resolvePluginTrace(plugin, specifiers);
+
+  // Without a trace there is only the package-name guess, which for these aliases is
+  // worse than not migrating the rule at all.
+  if (trace.kind === 'heuristic' && unguessableAliases.has(pluginName)) {
     return false;
   }
 
   targetConfig.jsPlugins ??= [];
 
-  const plugin = plugins?.[pluginName];
-  const specifier = plugin === undefined ? undefined : specifiers?.get(plugin);
-
   let entry: ExternalPluginEntry;
-  if (specifier === undefined) {
+  if (trace.kind === 'heuristic') {
     // Nothing tells us where the plugin was imported from, so guess the npm
     // package name and let oxlint derive the namespace from the package itself.
     const metaName = getPluginMetaName(plugin);
@@ -320,11 +383,15 @@ export const enableJsPluginRule = (
       ? resolveFromMetaName(metaName)
       : resolveEslintPluginName(pluginName);
   } else {
-    // The specifier is known, so the plugin can be registered under the very
-    // alias the ESLint config used and its rules can stay as they are.
+    // Either the specifier is known, or the plugin was built inside the ESLint
+    // config and only the user can supply one. Both keep the very alias the config
+    // used, so the rules can stay as they are.
     entry = {
       name: resolveJsPluginNamespace(pluginName, plugin, specifiers),
-      specifier,
+      specifier:
+        trace.kind === 'unresolved'
+          ? UNRESOLVED_PLUGIN_SPECIFIER
+          : trace.specifier,
     };
   }
 

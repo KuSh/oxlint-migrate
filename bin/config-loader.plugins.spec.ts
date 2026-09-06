@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { loadESLintConfig } from './config-loader.js';
+import type { JsPluginSpecifiers } from '../src/types.js';
 
 // These tests import real fixture projects through Node's own module resolution,
 // which is what `loadESLintConfig` traces. `vitest.config.ts` externalises
@@ -24,34 +25,41 @@ const pluginsOf = (config: any): Record<string, unknown> =>
 
 describe('loadESLintConfig plugin specifiers', () => {
   let plugins: Record<string, unknown>;
-  let specifiers: ReadonlyMap<unknown, string>;
+  let specifiers: JsPluginSpecifiers;
 
   beforeAll(async () => {
     const loaded = await load('eslint.config.mjs');
     plugins = pluginsOf(loaded.config);
-    specifiers = loaded.pluginSpecifiers;
+    specifiers = loaded.pluginSpecifiers!;
   });
 
   test('maps npm plugins to their package name', () => {
-    expect(specifiers.get(plugins.regexp)).toBe('eslint-plugin-regexp');
-    expect(specifiers.get(plugins['@stylistic'])).toBe(
+    expect(specifiers.byPlugin.get(plugins.regexp)).toBe(
+      'eslint-plugin-regexp'
+    );
+    expect(specifiers.byPlugin.get(plugins['@stylistic'])).toBe(
       '@stylistic/eslint-plugin'
     );
     // Registered under an alias, which must not change the specifier.
-    expect(specifiers.get(plugins.moka)).toBe('eslint-plugin-mocha');
+    expect(specifiers.byPlugin.get(plugins.moka)).toBe('eslint-plugin-mocha');
   });
 
   test('maps local plugins to a path relative to the output directory', () => {
-    expect(specifiers.get(plugins.mylocal)).toBe('./plugins/named.js');
-    expect(specifiers.get(plugins.anon)).toBe('./plugins/anonymous.js');
+    expect(specifiers.byPlugin.get(plugins.mylocal)).toBe('./plugins/named.js');
+    expect(specifiers.byPlugin.get(plugins.anon)).toBe(
+      './plugins/anonymous.js'
+    );
   });
 
-  test('has no specifier for a plugin built inside the config file', () => {
-    expect(specifiers.get(plugins.inline)).toBeUndefined();
+  test('places a plugin built inside the config file nowhere', () => {
+    // Neither addressable nor nested: that is what tells the migration this plugin
+    // came from the config file itself rather than from a module it failed to read.
+    expect(specifiers.byPlugin.get(plugins.inline)).toBeUndefined();
+    expect(specifiers.nested.has(plugins.inline)).toBe(false);
   });
 
   test('never points at a path inside node_modules', () => {
-    for (const specifier of specifiers.values()) {
+    for (const specifier of specifiers.byPlugin.values()) {
       expect(specifier).not.toContain('node_modules');
     }
   });
@@ -61,9 +69,9 @@ describe('loadESLintConfig plugin specifiers', () => {
     // one directory up, so the specifier has to be rewritten for that directory.
     const loaded = await load('nested/eslint.config.mjs');
 
-    expect(loaded.pluginSpecifiers.get(pluginsOf(loaded.config).mylocal)).toBe(
-      './plugins/named.js'
-    );
+    expect(
+      loaded.pluginSpecifiers!.byPlugin.get(pluginsOf(loaded.config).mylocal)
+    ).toBe('./plugins/named.js');
   });
 
   test('collects nothing when tracing is turned off', async () => {
@@ -72,7 +80,7 @@ describe('loadESLintConfig plugin specifiers', () => {
       { collectPluginSpecifiers: false, specifierBaseDir: fixtureDir }
     );
 
-    expect(loaded.pluginSpecifiers.size).toBe(0);
+    expect(loaded.pluginSpecifiers).toBeUndefined();
     // The config itself is still loaded.
     expect(loaded.config.default).toHaveLength(1);
   });

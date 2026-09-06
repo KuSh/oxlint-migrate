@@ -3,10 +3,16 @@ import path from 'node:path';
 import { afterAll, describe, expect, test } from 'vitest';
 import { loadESLintConfig } from '../../bin/config-loader.js';
 import migrateConfig from '../../src/index.js';
-import { deriveRulePrefix } from '../../src/jsPlugins.js';
+import {
+  deriveRulePrefix,
+  UNRESOLVED_PLUGIN_SPECIFIER,
+} from '../../src/jsPlugins.js';
 import { DefaultReporter } from '../../src/reporter.js';
 import type { OxlintConfig } from '../../src/types.js';
-import { runOxlintWithConfig } from '../oxlint-runner.js';
+import {
+  runOxlintWithConfig,
+  withoutUnresolvedPlugins,
+} from '../oxlint-runner.js';
 
 /**
  * Randomised end-to-end check of the JS-plugin migration.
@@ -75,6 +81,9 @@ const META_VARIANTS = [
 
 type LocalPlugin = { alias: string; file: string; rules: string[] };
 
+/** A plugin written in the config file itself, which no specifier can address. */
+type InlinePlugin = { alias: string; rules: string[] };
+
 const writeLocalPlugin = (
   projectDir: string,
   random: Random,
@@ -103,13 +112,26 @@ const writeLocalPlugin = (
   return { alias: `${random.pick(ALIASES)}-${index}`, file, rules };
 };
 
-const generateProject = (projectDir: string, random: Random): string => {
+const generateProject = (
+  projectDir: string,
+  random: Random
+): { configPath: string; inlineAliases: string[] } => {
   mkdirSync(projectDir, { recursive: true });
 
   const locals = Array.from({ length: 1 + random.int(3) }, (_, index) =>
     writeLocalPlugin(projectDir, random, index)
   );
   const npm = NPM_PLUGINS.filter(() => random.chance(0.5));
+  // `local` is in the mix on purpose: its rules are migrated only because tracing
+  // can say the plugin belongs to no module.
+  const inlines: InlinePlugin[] = random.chance(0.5)
+    ? [
+        {
+          alias: random.chance(0.5) ? 'local' : 'made-up',
+          rules: ['no-inline'],
+        },
+      ]
+    : [];
 
   const imports: string[] = [];
   const registrations: string[] = [];
@@ -142,6 +164,18 @@ const generateProject = (projectDir: string, random: Random): string => {
     }
   });
 
+  inlines.forEach((inline, index) => {
+    imports.push(
+      `const inline${index} = { rules: { ${inline.rules
+        .map((rule) => `${JSON.stringify(rule)}: { create: () => ({}) }`)
+        .join(', ')} } };`
+    );
+    registrations.push(`${JSON.stringify(inline.alias)}: inline${index}`);
+    for (const rule of inline.rules) {
+      baseRules.push(`${JSON.stringify(`${inline.alias}/${rule}`)}: "error"`);
+    }
+  });
+
   const configPath = path.join(projectDir, 'eslint.config.mjs');
   writeFileSync(
     configPath,
@@ -164,7 +198,7 @@ ${
 `
   );
 
-  return configPath;
+  return { configPath, inlineAliases: inlines.map((inline) => inline.alias) };
 };
 
 const migrate = async (
@@ -225,7 +259,10 @@ describe('js plugin migration (fuzz)', () => {
 
     test(`produces a config oxlint can load (seed ${seed})`, async () => {
       const projectDir = path.join(rootDir, `round-${round}`);
-      const configPath = generateProject(projectDir, makeRandom(seed));
+      const { configPath, inlineAliases } = generateProject(
+        projectDir,
+        makeRandom(seed)
+      );
 
       const config = await migrate(configPath, projectDir);
 
@@ -242,7 +279,22 @@ describe('js plugin migration (fuzz)', () => {
         }
       }
 
-      const result = runOxlintWithConfig(config, projectDir);
+      // Exactly the plugins the config builds itself get a placeholder. Emitting one
+      // for anything else would replace a working entry with a manual step; missing
+      // one leaves a guessed package name that oxlint cannot load.
+      const placeholders = (config.jsPlugins ?? [])
+        .filter(
+          (entry) =>
+            typeof entry !== 'string' &&
+            entry.specifier === UNRESOLVED_PLUGIN_SPECIFIER
+        )
+        .map((entry) => (entry as { name: string }).name);
+      expect(new Set(placeholders)).toStrictEqual(new Set(inlineAliases));
+
+      const result = runOxlintWithConfig(
+        withoutUnresolvedPlugins(config),
+        projectDir
+      );
       expect(
         result.ok,
         `oxlint rejected the migrated config:\n${result.output}\n\n${JSON.stringify(config, null, 2)}`

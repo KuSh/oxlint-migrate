@@ -5,6 +5,7 @@ import {
   isIgnoredPluginRule,
   mergeJsPlugins,
   resolveJsPluginRuleName,
+  UNRESOLVED_PLUGIN_SPECIFIER,
 } from './jsPlugins.js';
 import { cleanUpOxlintConfig } from './cleanup.js';
 import type { ESLint, OxlintConfig, OxlintConfigOrOverride } from './types.js';
@@ -337,7 +338,9 @@ describe('isIgnoredPluginRule', () => {
   test('returns true for ignored plugin rules', () => {
     // @typescript-eslint is treated as ignored
     expect(isIgnoredPluginRule('@typescript-eslint/no-unused-vars')).toBe(true);
-    // local plugin rules should be ignored (TODO: implement proper handling later)
+    // `local` still reports as unmigratable: only a trace can place such a plugin,
+    // and this function does not have one. `enableJsPluginRule` is where the rules
+    // are migrated once tracing knows where the plugin came from.
     expect(isIgnoredPluginRule('local/some-rule')).toBe(true);
   });
 
@@ -357,19 +360,22 @@ describe('isIgnoredPluginRule', () => {
 });
 
 describe('enableJsPluginRule with known specifiers', () => {
-  /** Builds the `plugins` record and the specifier map the CLI would hand over. */
+  /**
+   * Builds the `plugins` record and the trace result the CLI would hand over. A
+   * specifier of `undefined` stands for a plugin tracing could not place at all.
+   */
   const setup = (
     entries: Record<string, [ESLint.Plugin, string | undefined]>
   ) => {
     const plugins: Record<string, ESLint.Plugin> = {};
-    const specifiers = new Map<unknown, string>();
+    const byPlugin = new Map<unknown, string>();
     for (const [alias, [plugin, specifier]] of Object.entries(entries)) {
       plugins[alias] = plugin;
       if (specifier !== undefined) {
-        specifiers.set(plugin, specifier);
+        byPlugin.set(plugin, specifier);
       }
     }
-    return { plugins, specifiers };
+    return { plugins, specifiers: { byPlugin, nested: new Set() } };
   };
 
   test('registers a local plugin under the alias the ESLint config used', () => {
@@ -529,16 +535,44 @@ describe('enableJsPluginRule with known specifiers', () => {
     expect(targetConfig.rules).toStrictEqual({ 'oxc-js/my-rule': 'error' });
   });
 
-  test('falls back to the heuristic for a plugin that has no specifier', () => {
+  test('migrates a `local` plugin once tracing has placed it', () => {
     const targetConfig: OxlintConfigOrOverride = {};
-    const knownPlugin: ESLint.Plugin = { rules: {} };
-    const plugins: Record<string, ESLint.Plugin> = {
-      regexp: knownPlugin,
-      inline: { rules: {} },
-    };
-    const specifiers = new Map<unknown, string>([
-      [knownPlugin, 'eslint-plugin-regexp'],
+    const { plugins, specifiers } = setup({
+      local: [{ rules: {} }, './tools/plugin.js'],
+    });
+
+    expect(
+      enableJsPluginRule(
+        targetConfig,
+        'local/my-rule',
+        'error',
+        plugins,
+        specifiers
+      )
+    ).toBe(true);
+    expect(targetConfig.jsPlugins).toStrictEqual([
+      { name: 'local', specifier: './tools/plugin.js' },
     ]);
+  });
+
+  test('leaves a `local` plugin alone when there is nothing to trace', () => {
+    const targetConfig: OxlintConfigOrOverride = {};
+
+    // `eslint-plugin-local` is a real package, so guessing it would quietly load the
+    // wrong plugin rather than fail.
+    expect(
+      enableJsPluginRule(targetConfig, 'local/my-rule', 'error', {
+        local: { rules: {} },
+      })
+    ).toBe(false);
+    expect(targetConfig.jsPlugins).toBeUndefined();
+  });
+
+  test('marks a plugin built inside the config as unresolved', () => {
+    const targetConfig: OxlintConfigOrOverride = {};
+    const { plugins, specifiers } = setup({
+      inline: [{ rules: {} }, undefined],
+    });
 
     enableJsPluginRule(
       targetConfig,
@@ -548,7 +582,44 @@ describe('enableJsPluginRule with known specifiers', () => {
       specifiers
     );
 
-    expect(targetConfig.jsPlugins).toStrictEqual(['eslint-plugin-inline']);
+    // Guessing a package name here produces a config oxlint refuses to load, so the
+    // placeholder says plainly that the user has to fill this one in.
+    expect(targetConfig.jsPlugins).toStrictEqual([
+      { name: 'inline', specifier: UNRESOLVED_PLUGIN_SPECIFIER },
+    ]);
+    expect(targetConfig.rules).toStrictEqual({ 'inline/no-inline': 'error' });
+  });
+
+  test('keeps the heuristic for a plugin nested in another package config', () => {
+    const targetConfig: OxlintConfigOrOverride = {};
+    const nestedPlugin: ESLint.Plugin = { rules: {} };
+
+    enableJsPluginRule(
+      targetConfig,
+      'react-web-api/no-leaked-event-listener',
+      'error',
+      { 'react-web-api': nestedPlugin },
+      { byPlugin: new Map(), nested: new Set([nestedPlugin]) }
+    );
+
+    // No specifier yields this object, but the package name still resolves it.
+    expect(targetConfig.jsPlugins).toStrictEqual([
+      'eslint-plugin-react-web-api',
+    ]);
+  });
+
+  test('keeps the heuristic for a rule whose plugin is never registered', () => {
+    const targetConfig: OxlintConfigOrOverride = {};
+
+    enableJsPluginRule(
+      targetConfig,
+      'mocha/no-pending-tests',
+      'error',
+      {},
+      { byPlugin: new Map(), nested: new Set() }
+    );
+
+    expect(targetConfig.jsPlugins).toStrictEqual(['eslint-plugin-mocha']);
   });
 });
 
@@ -572,7 +643,10 @@ describe('resolveJsPluginRuleName with meta.namespace', () => {
       resolveJsPluginRuleName(
         'alias/some-rule',
         { alias: plugin },
-        new Map([[plugin, 'eslint-plugin-thing']])
+        {
+          byPlugin: new Map([[plugin, 'eslint-plugin-thing']]),
+          nested: new Set(),
+        }
       )
     ).toBe('alias/some-rule');
   });

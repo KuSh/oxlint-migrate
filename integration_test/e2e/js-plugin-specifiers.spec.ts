@@ -3,10 +3,17 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { loadESLintConfig } from '../../bin/config-loader.js';
 import migrateConfig from '../../src/index.js';
-import { deriveRulePrefix } from '../../src/jsPlugins.js';
+import {
+  deriveRulePrefix,
+  UNRESOLVED_PLUGIN_SPECIFIER,
+} from '../../src/jsPlugins.js';
 import { DefaultReporter } from '../../src/reporter.js';
 import type { OxlintConfig } from '../../src/types.js';
-import { lintWithConfig, runOxlintWithConfig } from '../oxlint-runner.js';
+import {
+  lintWithConfig,
+  runOxlintWithConfig,
+  withoutUnresolvedPlugins,
+} from '../oxlint-runner.js';
 
 // Full CLI path for JS plugins: load an ESLint config the way `bin/oxlint-migrate`
 // does, migrate it, then hand the result to the real oxlint to prove it loads.
@@ -97,23 +104,28 @@ describe('migrating plugins with known specifiers', () => {
     }
   });
 
-  test('oxlint loads the generated config', () => {
-    // The config that comes out of the fixture still lists the plugin built inline
-    // in the ESLint config, which no specifier can describe. Drop it here so the
-    // check is about the plugins we did resolve; the inline case is a known gap.
-    const withoutInline: OxlintConfig = {
-      ...config,
-      jsPlugins: (config.jsPlugins ?? []).filter(
-        (entry) => entry !== 'eslint-plugin-inline'
-      ),
-      rules: Object.fromEntries(
-        Object.entries(config.rules ?? {}).filter(
-          ([rule]) => !rule.startsWith('inline/')
-        )
-      ),
-    };
+  test('flags the plugins the config builds itself', () => {
+    // `inline` has no module behind it, under either of the two aliases it is
+    // registered with, so there is no specifier to write and the user has to supply
+    // one. The rules are migrated regardless.
+    expect(config.jsPlugins).toContainEqual({
+      name: 'inline',
+      specifier: UNRESOLVED_PLUGIN_SPECIFIER,
+    });
+    expect(config.jsPlugins).toContainEqual({
+      name: 'local',
+      specifier: UNRESOLVED_PLUGIN_SPECIFIER,
+    });
+    expect(config.rules?.['inline/no-inline']).toBe('error');
+    expect(config.rules?.['local/no-inline']).toBe('error');
+  });
 
-    const result = runOxlintWithConfig(withoutInline, checkDir);
+  test('oxlint loads the generated config', () => {
+    const result = runOxlintWithConfig(
+      withoutUnresolvedPlugins(config),
+      checkDir
+    );
+
     expect(
       result.ok,
       `oxlint rejected the migrated config:\n${result.output}`

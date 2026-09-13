@@ -16,6 +16,7 @@ import { writeFile } from 'node:fs/promises';
 import { preFixForJsPlugins } from '../src/js_plugin_fixes.js';
 import { DefaultReporter } from '../src/reporter.js';
 import { isOffValue } from '../src/plugins_rules.js';
+import { UNRESOLVED_PLUGIN_SPECIFIER } from '../src/jsPlugins.js';
 import {
   formatMigrationOutput,
   displayMigrationResult,
@@ -74,6 +75,27 @@ const warnIfTsconfigHasBaseUrl = (reporter: DefaultReporter): void => {
   } catch {
     // If tsconfig.json can't be parsed, silently ignore — it's not critical.
   }
+};
+
+/**
+ * Names of the plugins the ESLint config built itself, which got a placeholder
+ * specifier because nothing in the project can be imported to obtain them.
+ */
+const findUnresolvedJsPlugins = (config: OxlintConfig): string[] => {
+  const names = new Set<string>();
+
+  for (const section of [config, ...(config.overrides ?? [])]) {
+    for (const entry of section.jsPlugins ?? []) {
+      if (
+        typeof entry !== 'string' &&
+        entry.specifier === UNRESOLVED_PLUGIN_SPECIFIER
+      ) {
+        names.add(entry.name);
+      }
+    }
+  }
+
+  return [...names];
 };
 
 /**
@@ -217,6 +239,19 @@ program
     }
 
     writeFileSync(oxlintFilePath, JSON.stringify(oxlintConfig, null, 2));
+
+    const unresolvedJsPlugins = findUnresolvedJsPlugins(oxlintConfig);
+    if (unresolvedJsPlugins.length > 0) {
+      // The formatter turns every line after the first into its own bullet, so keep
+      // this to a summary and a single follow-up line.
+      const plural = unresolvedJsPlugins.length === 1 ? '' : 's';
+      reporter.addWarning(
+        `Could not locate ${unresolvedJsPlugins.length} plugin${plural} because the ESLint config builds ` +
+          `${unresolvedJsPlugins.length === 1 ? 'it' : 'them'} directly: ${unresolvedJsPlugins.join(', ')}.\n` +
+          `The rules were migrated and "${UNRESOLVED_PLUGIN_SPECIFIER}" written into the jsPlugins array of ` +
+          `${cliOptions.outputFile}. Move each plugin into its own file and replace the placeholder with its path.`
+      );
+    }
 
     const enabledRulesCount = countEnabledRules(oxlintConfig);
 

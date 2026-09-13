@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { UNRESOLVED_PLUGIN_SPECIFIER } from '../src/jsPlugins.js';
 import type { OxlintConfig } from '../src/types.js';
 
 const require = createRequire(import.meta.url);
@@ -13,6 +14,54 @@ const oxlintBin = path.join(
 );
 
 let checkCounter = 0;
+
+/**
+ * Drops the plugins the migration could not resolve, and their rules.
+ *
+ * A `<NOT FOUND>` entry is a message to the user, not a loadable plugin, so oxlint
+ * rejects it by design. Removing those leaves the part of the config the migration
+ * claims to have got right, which is what the oxlint checks are about.
+ */
+export const withoutUnresolvedPlugins = (
+  config: OxlintConfig
+): OxlintConfig => {
+  const unresolved = new Set(
+    (config.jsPlugins ?? [])
+      .filter(
+        (entry) =>
+          typeof entry !== 'string' &&
+          entry.specifier === UNRESOLVED_PLUGIN_SPECIFIER
+      )
+      .map((entry) => (entry as { name: string }).name)
+  );
+
+  if (unresolved.size === 0) {
+    return config;
+  }
+
+  const strip = <T extends { jsPlugins?: unknown; rules?: unknown }>(
+    section: T
+  ): T => ({
+    ...section,
+    jsPlugins: (
+      (section.jsPlugins ?? []) as (string | { name: string })[]
+    ).filter(
+      (entry) => typeof entry === 'string' || !unresolved.has(entry.name)
+    ),
+    rules: Object.fromEntries(
+      Object.entries((section.rules ?? {}) as Record<string, unknown>).filter(
+        ([rule]) => !unresolved.has(rule.slice(0, rule.lastIndexOf('/')))
+      )
+    ),
+  });
+
+  return {
+    ...strip(config),
+    ...(config.overrides === undefined
+      ? {}
+      : { overrides: config.overrides.map(strip) }),
+  };
+};
 
 export type OxlintRun = {
   /** True when oxlint read the config and loaded every plugin it lists. */

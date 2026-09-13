@@ -71,11 +71,20 @@ Note: Oxlint does not support `settings` in override configs. If your ESLint con
 
 Not all `settings` options are supported by oxlint, and so rule behavior in certain edge-cases may differ. See [the Settings docs](https://oxc.rs/docs/guide/usage/linter/config-file-reference.html#settings) for more info.
 
-**ESLint Plugins built inside the config file are not migrated**
+**ESLint Plugins built inside the config file need one manual step**
 
 Plugins that are imported, whether from a package or from a file path in the same repo, are migrated with the path or package name they were imported from, rewritten to be relative to the generated `.oxlintrc.json`.
 
-A plugin that has no module to point at cannot be migrated: one written inline in `eslint.config.mjs`, or built by spreading another plugin. The rules are still migrated, but you will need to move the plugin into its own file and fix up its `jsPlugins` entry by hand. See [the JS Plugins docs](https://oxc.rs/docs/guide/usage/linter/js-plugins.html) for more info.
+A plugin written inline in `eslint.config.mjs` has no module to point at, so nothing can be imported to obtain it. Its rules are still migrated and its `jsPlugins` entry is written with a `"<NOT FOUND>"` specifier, which the migration reports at the end of the run:
+
+```json
+{
+  "jsPlugins": [{ "name": "local", "specifier": "<NOT FOUND>" }],
+  "rules": { "local/my-rule": "error" }
+}
+```
+
+Move the plugin into its own file, `export default` it, and replace the placeholder with the path. See [the JS Plugins docs](https://oxc.rs/docs/guide/usage/linter/js-plugins.html) for more info.
 
 **`globals` field with large number of values**
 
